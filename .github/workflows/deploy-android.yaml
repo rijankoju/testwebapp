@@ -1,0 +1,49 @@
+name: Build and Deploy to Android
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # manual trigger
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1 Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2 Set up Java for Gradle
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: 17
+
+      # 3 Build Spring Boot JAR
+      - name: Build Spring Boot App
+        run: ./gradlew clean bootJar -x test
+
+      # 4  Deploy JAR to Android via SSH
+      - name: Copy JAR to Android device
+        uses: appleboy/scp-action@v0.1.5
+        with:
+          host: ${{ secrets.ANDROID_HOST }}
+          username: ${{ secrets.ANDROID_USER }}
+          key: ${{ secrets.ANDROID_SSH_KEY }}
+          port: ${{ secrets.ANDROID_PORT }}
+          source: "build/libs/*.jar"
+          target: "/data/data/com.termux/files/home/app.jar"
+
+      # 5 Start the app on Android
+      - name: Run Spring Boot on Android
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.ANDROID_HOST }}
+          username: ${{ secrets.ANDROID_USER }}
+          key: ${{ secrets.ANDROID_SSH_KEY }}
+          port: ${{ secrets.ANDROID_PORT }}
+          script: |
+            pkill -f app.jar || true
+            nohup java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &
