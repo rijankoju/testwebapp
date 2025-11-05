@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted   # 👈 use your Windows self-hosted runner instead of GitHub’s server
 
     steps:
       # 1 Checkout repo
