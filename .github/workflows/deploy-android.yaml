@@ -13,23 +13,22 @@ jobs:
       GIT_SAFE_DIRECTORY: '*'  # Fix Git ownership issues
 
     steps:
-      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
-        with:
-          persist-credentials: false
-          fetch-depth: 0
 
-      # 2️⃣ Use existing system JDK 24
-      - name: Set JAVA_HOME
+      - name: Set JAVA_HOME for this job
+        shell: cmd
         run: |
-          echo "Setting JAVA_HOME for this job"
-          setx JAVA_HOME "C:\Program Files\Java\jdk-24"
-          setx PATH "%JAVA_HOME%\bin;%PATH%"
+          echo Setting JAVA_HOME for this job
+          set "JAVA_HOME=C:\Program Files\Java\jdk-24"
+          set "PATH=%JAVA_HOME%\bin;%PATH%"
+          java -version
+      
 
       # 3️⃣ Build Spring Boot JAR
-      - name: Build Spring Boot App
-        run: .\gradlew.bat clean bootJar -x test --stacktrace
+      - name: Build Spring Boot
+        shell: cmd
+        run: gradlew.bat clean bootJar -x test
 
 
       # 4️⃣ Copy JAR to Android device
