@@ -32,24 +32,46 @@ jobs:
 
 
       # 4️⃣ Copy JAR to Android device
-      - name: Copy JAR to Android device
-        uses: appleboy/scp-action@v0.1.5
-        with:
-          host: ${{ secrets.ANDROID_HOST }}
-          username: ${{ secrets.ANDROID_USER }}
-          key: ${{ secrets.ANDROID_SSH_KEY }}
-          port: ${{ secrets.ANDROID_PORT }}
-          source: "build/libs/*.jar"
-          target: "/data/data/com.termux/files/home/app.jar"
+      - name: Copy JAR to Android device (Windows)
+        shell: powershell
+        run: |
+          # Ensure TEMP exists
+          if (-not $env:TEMP) { $env:TEMP = "C:\Windows\Temp" }
 
-      # 5️⃣ Start the app on Android
-      - name: Run Spring Boot on Android
-        uses: appleboy/ssh-action@v0.1.9
-        with:
-          host: ${{ secrets.ANDROID_HOST }}
-          username: ${{ secrets.ANDROID_USER }}
-          key: ${{ secrets.ANDROID_SSH_KEY }}
-          port: ${{ secrets.ANDROID_PORT }}
-          script: |
-            pkill -f app.jar || true
-            nohup java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &
+          # Path for SSH key
+          $keyPath = Join-Path $env:TEMP "android_key.pem"
+          [System.IO.File]::WriteAllText($keyPath, $env:ANDROID_SSH_KEY)
+
+          # Find the JAR
+          $jarFile = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\build\libs" -Filter "*.jar" | Select-Object -First 1
+          if (-not $jarFile) { throw "No JAR found" }
+          $jarPath = $jarFile.FullName
+          Write-Host "Using JAR path: $jarPath"
+
+          # Full path to scp.exe
+          $scpPath = "$env:SystemRoot\System32\OpenSSH\scp.exe"
+
+          # Use Start-Process to safely pass arguments with spaces
+          Start-Process -FilePath $scpPath -ArgumentList "-i `"$keyPath`" -P $env:ANDROID_PORT `"$jarPath`" $env:ANDROID_USER@$env:ANDROID_HOST:/data/data/com.termux/files/home/app.jar" -Wait
+        env:
+          ANDROID_SSH_KEY: ${{ secrets.ANDROID_SSH_KEY }}
+          ANDROID_USER: ${{ secrets.ANDROID_USER }}
+          ANDROID_HOST: ${{ secrets.ANDROID_HOST }}
+          ANDROID_PORT: ${{ secrets.ANDROID_PORT }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Run Spring Boot on Android (Windows)
+        shell: pwsh
+        run: |
+          $keyPath = Join-Path $env:TEMP "android_key.pem"
+          $sshPath = "$env:SystemRoot\System32\OpenSSH\ssh.exe"
+          & $sshPath -i $keyPath -p $env:ANDROID_PORT $env:ANDROID_USER@$env:ANDROID_HOST "pkill -f app.jar || true; nohup java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &"
+        env:
+          ANDROID_SSH_KEY: ${{ secrets.ANDROID_SSH_KEY }}
+          ANDROID_USER: ${{ secrets.ANDROID_USER }}
+          ANDROID_HOST: ${{ secrets.ANDROID_HOST }}
+          ANDROID_PORT: ${{ secrets.ANDROID_PORT }}
+
+
+
+
