@@ -23,7 +23,6 @@ jobs:
           java -version
         shell: bash
 
-
       # 3️⃣ Build Spring Boot JAR
       - name: Build Spring Boot
         run: |
@@ -32,24 +31,34 @@ jobs:
           ./gradlew clean bootJar -x test
         shell: bash
 
+      # 4️⃣ Debug build output
+      - name: Debug build/libs
+        run: |
+          echo "=== build/libs ==="
+          ls -l "$GITHUB_WORKSPACE/build/libs"
+        shell: bash
 
-      # 4️⃣ Write SSH key
+      # 5️⃣ Write SSH key to runner temp
       - name: Write SSH key
         run: |
           KEY_PATH="$RUNNER_TEMP/android_key.pem"
+
+          # Decode base64 private key from secret
           echo "$ANDROID_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+
+          # Fix permissions
           chmod 600 "$KEY_PATH"
+
           echo "✅ SSH key written to $KEY_PATH"
+
+          # Optional: debug first 5 lines of key
+          echo "=== FIRST 5 LINES OF KEY ==="
+          head -n 5 "$KEY_PATH"
         shell: bash
         env:
           ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
 
-      - name: Debug build output
-        run: |
-          echo "=== build/libs ==="
-          ls -l "$GITHUB_WORKSPACE/build/libs"
-
-      # 5️⃣ Copy & Run JAR on Android
+      # 6️⃣ Copy & Run JAR on Android
       - name: Copy & Run JAR on Android
         run: |
           KEY_PATH="$RUNNER_TEMP/android_key.pem"
@@ -60,26 +69,23 @@ jobs:
             echo "❌ No JAR found in build/libs"
             exit 1
           fi
-          
+
           echo "KEY_PATH = $KEY_PATH"
+          echo "JAR_PATH = $JAR_PATH"
           echo "ANDROID_USER = $ANDROID_USER"
           echo "ANDROID_HOST = $ANDROID_HOST"
           echo "ANDROID_PORT = $ANDROID_PORT"
-          echo "JAR_PATH = $JAR_PATH"
-          
-          echo "=== TESTING SSH CONNECTION ==="
-          ssh -vvv -i "$KEY_PATH" -p $ANDROID_PORT "$ANDROID_USER@$ANDROID_HOST" "echo OK"
-          
-          echo "=== RUNNING SCP WITH DEBUG ==="
-          /usr/bin/scp -vvv -i "$KEY_PATH" -P $ANDROID_PORT "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:/data/data/com.termux/files/home/app.jar"
-          
-          # Copy JAR to Android via SCP
-          echo "🚀 Copying JAR to Android..."
-          scp -i "$KEY_PATH" -P $ANDROID_PORT "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:/data/data/com.termux/files/home/app.jar"
 
-          # Run JAR on Android
+          # --- Test SSH connection first ---
+          ssh -i "$KEY_PATH" -p "$ANDROID_PORT" -o StrictHostKeyChecking=no "$ANDROID_USER@$ANDROID_HOST" "echo SSH connected"
+
+          # --- Copy JAR via SCP ---
+          echo "🚀 Copying JAR to Android..."
+          scp -i "$KEY_PATH" -P "$ANDROID_PORT" "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:/data/data/com.termux/files/home/app.jar"
+
+          # --- Run JAR on Android ---
           echo "🚀 Starting app.jar on Android..."
-          ssh -i "$KEY_PATH" -p $ANDROID_PORT "$ANDROID_USER@$ANDROID_HOST" \
+          ssh -i "$KEY_PATH" -p "$ANDROID_PORT" "$ANDROID_USER@$ANDROID_HOST" \
             "pkill -f app.jar || true; nohup java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &"
 
           echo "✅ App started in background on Android"
