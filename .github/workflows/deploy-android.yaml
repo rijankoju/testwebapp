@@ -41,7 +41,7 @@ jobs:
       # 5️⃣ Write SSH key to runner temp
       - name: Write SSH key
         run: |
-          KEY_PATH="$RUNNER_TEMP/android_key.pem"
+          KEY_PATH="$HOME/android_key.pem"
 
           # Decode base64 private key from secret
           echo "$ANDROID_KEY_BASE64" | base64 --decode > "$KEY_PATH"
@@ -61,10 +61,13 @@ jobs:
       # 6️⃣ Copy & Run JAR on Android
       - name: Copy & Run JAR on Android
         run: |
-          KEY_PATH="$RUNNER_TEMP/android_key.pem"
+          set -euo pipefail
+          set -x  # Debug output
 
-          # Find the JAR
+          # Paths
+          KEY_PATH="$HOME/android_key.pem"
           JAR_PATH=$(find "$GITHUB_WORKSPACE/build/libs" -name "*.jar" | head -n 1)
+
           if [ -z "$JAR_PATH" ]; then
             echo "❌ No JAR found in build/libs"
             exit 1
@@ -76,18 +79,26 @@ jobs:
           echo "ANDROID_HOST = $ANDROID_HOST"
           echo "ANDROID_PORT = $ANDROID_PORT"
 
-          # --- Test SSH connection first ---
+          # --- Test SSH connection ---
           ssh -i "$KEY_PATH" -p "$ANDROID_PORT" -o StrictHostKeyChecking=no "$ANDROID_USER@$ANDROID_HOST" "echo SSH connected"
 
-          # --- Copy JAR via SCP ---
+          # --- Copy JAR to Termux home directory (safer) ---
           echo "🚀 Copying JAR to Android..."
-          scp -i "$KEY_PATH" -P "$ANDROID_PORT" "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:/data/data/com.termux/files/home/app.jar"
+          scp -v -i "$KEY_PATH" -P "$ANDROID_PORT" "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:~/app.jar"
 
-          # --- Run JAR on Android ---
+          # --- Kill any running instance safely ---
+          echo "🚀 Stopping any existing app.jar process..."
+          ssh -i "$KEY_PATH" -p "$ANDROID_PORT" "$ANDROID_USER@$ANDROID_HOST" \
+          "ps -ef | grep '[j]ava.*app.jar' | awk '{print \$2}' | xargs -r kill -9 || true"
+
+          # --- Move JAR to final location if needed ---
+          ssh -i "$KEY_PATH" -p "$ANDROID_PORT" "$ANDROID_USER@$ANDROID_HOST" "mv ~/app.jar /data/data/com.termux/files/home/app.jar || true"
+
+          # --- Start app in background ---
           echo "🚀 Starting app.jar on Android..."
           ssh -i "$KEY_PATH" -p "$ANDROID_PORT" "$ANDROID_USER@$ANDROID_HOST" \
-          "pkill -f app.jar || true; nohup /data/data/com.termux/files/usr/bin/java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &"
-  
+          "nohup /data/data/com.termux/files/usr/bin/java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &"
+
           echo "✅ App started in background on Android"
         shell: bash
         env:
@@ -96,3 +107,4 @@ jobs:
           ANDROID_HOST: ${{ secrets.ANDROID_HOST }}
           ANDROID_PORT: ${{ secrets.ANDROID_PORT }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
+
