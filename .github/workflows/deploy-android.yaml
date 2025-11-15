@@ -86,8 +86,8 @@ jobs:
           # --- Run JAR on Android ---
           echo "🚀 Starting app.jar on Android..."
           ssh -i "$KEY_PATH" -p "$ANDROID_PORT" "$ANDROID_USER@$ANDROID_HOST" \
-            "pkill -f app.jar || true; nohup java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &"
-
+          "pkill -f app.jar || true; nohup /data/data/com.termux/files/usr/bin/java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &"
+  
           echo "✅ App started in background on Android"
         shell: bash
         env:
