@@ -16,18 +16,22 @@ jobs:
         uses: actions/checkout@v3
 
       # 2️⃣ Set JAVA_HOME
-      - name: Set JAVA_HOME for this job
+      - name: Set JAVA_HOME
         run: |
-          echo "Setting JAVA_HOME"
-          export JAVA_HOME=/usr/lib/jvm/java-24-openjdk-amd64
+          export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
           export PATH=$JAVA_HOME/bin:$PATH
           java -version
         shell: bash
 
+
       # 3️⃣ Build Spring Boot JAR
       - name: Build Spring Boot
-        run: ./gradlew clean bootJar -x test
+        run: |
+          dos2unix ./gradlew
+          chmod +x ./gradlew
+          ./gradlew clean bootJar -x test
         shell: bash
+
 
       # 4️⃣ Write SSH key
       - name: Write SSH key
