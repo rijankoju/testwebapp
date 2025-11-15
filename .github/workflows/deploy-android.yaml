@@ -44,6 +44,11 @@ jobs:
         env:
           ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
 
+      - name: Debug build output
+        run: |
+          echo "=== build/libs ==="
+          ls -l "$GITHUB_WORKSPACE/build/libs"
+
       # 5️⃣ Copy & Run JAR on Android
       - name: Copy & Run JAR on Android
         run: |
@@ -55,7 +60,19 @@ jobs:
             echo "❌ No JAR found in build/libs"
             exit 1
           fi
-
+          
+          echo "KEY_PATH = $KEY_PATH"
+          echo "ANDROID_USER = $ANDROID_USER"
+          echo "ANDROID_HOST = $ANDROID_HOST"
+          echo "ANDROID_PORT = $ANDROID_PORT"
+          echo "JAR_PATH = $JAR_PATH"
+          
+          echo "=== TESTING SSH CONNECTION ==="
+          ssh -vvv -i "$KEY_PATH" -p $ANDROID_PORT "$ANDROID_USER@$ANDROID_HOST" "echo OK"
+          
+          echo "=== RUNNING SCP WITH DEBUG ==="
+          /usr/bin/scp -vvv -i "$KEY_PATH" -P $ANDROID_PORT "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:/data/data/com.termux/files/home/app.jar"
+          
           # Copy JAR to Android via SCP
           echo "🚀 Copying JAR to Android..."
           scp -i "$KEY_PATH" -P $ANDROID_PORT "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:/data/data/com.termux/files/home/app.jar"
