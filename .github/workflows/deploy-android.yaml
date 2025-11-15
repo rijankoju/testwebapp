@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-deploy:
-    runs-on: self-hosted  # Windows self-hosted runner
+    runs-on: self-hosted  # Linux runner inside WSL
 
     steps:
       # 1️⃣ Checkout repository
@@ -17,75 +17,52 @@ jobs:
 
       # 2️⃣ Set JAVA_HOME
       - name: Set JAVA_HOME for this job
-        shell: cmd
         run: |
-          echo Setting JAVA_HOME
-          set "JAVA_HOME=C:\Program Files\Java\jdk-24"
-          set "PATH=%JAVA_HOME%\bin;%PATH%"
+          echo "Setting JAVA_HOME"
+          export JAVA_HOME=/usr/lib/jvm/java-24-openjdk-amd64
+          export PATH=$JAVA_HOME/bin:$PATH
           java -version
+        shell: bash
 
       # 3️⃣ Build Spring Boot JAR
       - name: Build Spring Boot
-        shell: cmd
-        run: gradlew.bat clean bootJar -x test
+        run: ./gradlew clean bootJar -x test
+        shell: bash
 
-      - name: Check OpenSSH version
-        shell: pwsh
-        run: ssh -V
-
+      # 4️⃣ Write SSH key
       - name: Write SSH key
-        shell: pwsh
         run: |
-          # Use runner's temp folder (safe for write)
-          $keyPath = "C:\actions-runner\_work\_temp\android_key.pem"
+          KEY_PATH="$RUNNER_TEMP/android_key.pem"
+          echo "$ANDROID_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "✅ SSH key written to $KEY_PATH"
+        shell: bash
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
 
-          # Decode base64 key from secret
-          $keyDecoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:ANDROID_KEY_BASE64))
-
-          # Write key
-          Set-Content -Path $keyPath -Value $keyDecoded -Encoding ascii -NoNewline
-
-          Write-Host "✅ SSH key written to $keyPath"
-
-      # 4️⃣ Copy & Run JAR on Android using runner temp for SSH key
+      # 5️⃣ Copy & Run JAR on Android
       - name: Copy & Run JAR on Android
-        shell: pwsh
         run: |
-          # --- Paths ---
-          $keyPath = "$env:RUNNER_TEMP\android_key.pem"
+          KEY_PATH="$RUNNER_TEMP/android_key.pem"
 
-          # --- Decode SSH key from secret ---
-          if (-not $env:ANDROID_KEY_BASE64) { throw "ANDROID_KEY_BASE64 is not set" }
-          $keyDecoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:ANDROID_KEY_BASE64))
+          # Find the JAR
+          JAR_PATH=$(find "$GITHUB_WORKSPACE/build/libs" -name "*.jar" | head -n 1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "❌ No JAR found in build/libs"
+            exit 1
+          fi
 
-          # --- Write SSH key to temp folder ---
-          Set-Content -Path $keyPath -Value $keyDecoded -Encoding ascii -NoNewline
-          Write-Host "✅ SSH key written to $keyPath"
+          # Copy JAR to Android via SCP
+          echo "🚀 Copying JAR to Android..."
+          scp -i "$KEY_PATH" -P $ANDROID_PORT "$JAR_PATH" "$ANDROID_USER@$ANDROID_HOST:/data/data/com.termux/files/home/app.jar"
 
-          # --- Find the JAR ---
-          $jarPath = Get-ChildItem "$env:GITHUB_WORKSPACE\build\libs" -Filter "*.jar" | Select-Object -First 1
-          if (-not $jarPath) { throw "No JAR found in build/libs" }
-
-          # --- SCP JAR to Android ---
-          $scpPath = "$env:SystemRoot\System32\OpenSSH\scp.exe"
-          Write-Host "🚀 Copying JAR to Android..."
-          & $scpPath -v -i $keyPath -P $env:ANDROID_PORT "$($jarPath.FullName)" "$($env:ANDROID_USER)@$($env:ANDROID_HOST):/data/data/com.termux/files/home/app.jar"
-          if ($LASTEXITCODE -ne 0) { throw "❌ SCP failed with exit code $LASTEXITCODE" }
-          Write-Host "✅ Copied successfully!"
-
-          # --- Run Spring Boot JAR on Android ---
-          $sshPath = "$env:SystemRoot\System32\OpenSSH\ssh.exe"
-          Write-Host "🚀 Starting app.jar on Android..."
-          $sshArgs = @(
-            "-i", $keyPath
-            "-p", $env:ANDROID_PORT
-            "$($env:ANDROID_USER)@$($env:ANDROID_HOST)"
+          # Run JAR on Android
+          echo "🚀 Starting app.jar on Android..."
+          ssh -i "$KEY_PATH" -p $ANDROID_PORT "$ANDROID_USER@$ANDROID_HOST" \
             "pkill -f app.jar || true; nohup java -jar /data/data/com.termux/files/home/app.jar > app.log 2>&1 &"
-          )
-          & $sshPath @sshArgs
-          if ($LASTEXITCODE -ne 0) { throw "❌ SSH command failed with exit code $LASTEXITCODE" }
-          Write-Host "✅ App started in background on Android"
 
+          echo "✅ App started in background on Android"
+        shell: bash
         env:
           ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
           ANDROID_USER: ${{ secrets.ANDROID_USER }}
